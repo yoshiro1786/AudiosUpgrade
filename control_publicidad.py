@@ -3,11 +3,11 @@ import sys
 import time
 import json
 import random
+import ctypes
 import subprocess
 
 # Configuración de codificación para evitar errores de caracteres en consolas Windows (CMD/PowerShell)
 if sys.platform.startswith('win'):
-    import ctypes
     # Forzar consola a UTF-8 para que los caracteres como "ó", "í" se muestren bien
     ctypes.windll.kernel32.SetConsoleOutputCP(65001)
 
