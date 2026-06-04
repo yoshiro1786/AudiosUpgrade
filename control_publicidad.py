@@ -34,17 +34,36 @@ def get_media_status_windows():
     # Retorna: 'PLAYING', 'PAUSED', 'NO_SESSION' o 'ERROR'
     ps_script = """
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
-    [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime] | Out-Null
-    $Task = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
-    $Task.AsTask().Wait()
-    $SessionManager = $Task.GetResults()
-    $CurrentSession = $SessionManager.GetCurrentSession()
-    if ($CurrentSession) {
-        $PlaybackInfo = $CurrentSession.GetPlaybackInfo()
-        if ($PlaybackInfo.PlaybackStatus -eq 4) {
-            Write-Output "PLAYING"
+    $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | 
+        Where-Object { 
+            $_.Name -eq 'AsTask' -and 
+            $_.GetParameters().Count -eq 1 -and 
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' 
+        })[0]
+
+    function Await-AsyncOperation {
+        param ($AsyncOp, $ResultType)
+        $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+        $netTask = $asTask.Invoke($null, @($AsyncOp))
+        $netTask.Wait(-1) | Out-Null
+        return $netTask.Result
+    }
+
+    $SessionManagerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
+    $asyncOp = $SessionManagerType::RequestAsync()
+    $SessionManager = Await-AsyncOperation $asyncOp $SessionManagerType
+
+    if ($SessionManager) {
+        $CurrentSession = $SessionManager.GetCurrentSession()
+        if ($CurrentSession) {
+            $PlaybackInfo = $CurrentSession.GetPlaybackInfo()
+            if ($PlaybackInfo.PlaybackStatus -eq 4) {
+                Write-Output "PLAYING"
+            } else {
+                Write-Output "PAUSED"
+            }
         } else {
-            Write-Output "PAUSED"
+            Write-Output "NO_SESSION"
         }
     } else {
         Write-Output "NO_SESSION"
@@ -65,14 +84,33 @@ def get_media_status_windows():
 def pause_media_windows():
     ps_script = """
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
-    [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime] | Out-Null
-    $Task = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
-    $Task.AsTask().Wait()
-    $SessionManager = $Task.GetResults()
-    $CurrentSession = $SessionManager.GetCurrentSession()
-    if ($CurrentSession) {
-        $CurrentSession.TryPauseAsync() | Out-Null
-        Write-Output "PAUSED"
+    $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | 
+        Where-Object { 
+            $_.Name -eq 'AsTask' -and 
+            $_.GetParameters().Count -eq 1 -and 
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' 
+        })[0]
+
+    function Await-AsyncOperation {
+        param ($AsyncOp, $ResultType)
+        $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+        $netTask = $asTask.Invoke($null, @($AsyncOp))
+        $netTask.Wait(-1) | Out-Null
+        return $netTask.Result
+    }
+
+    $SessionManagerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
+    $asyncOp = $SessionManagerType::RequestAsync()
+    $SessionManager = Await-AsyncOperation $asyncOp $SessionManagerType
+
+    if ($SessionManager) {
+        $CurrentSession = $SessionManager.GetCurrentSession()
+        if ($CurrentSession) {
+            $CurrentSession.TryPauseAsync() | Out-Null
+            Write-Output "PAUSED"
+        } else {
+            Write-Output "NO_SESSION"
+        }
     } else {
         Write-Output "NO_SESSION"
     }
@@ -92,14 +130,33 @@ def pause_media_windows():
 def play_media_windows():
     ps_script = """
     Add-Type -AssemblyName System.Runtime.WindowsRuntime
-    [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime] | Out-Null
-    $Task = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
-    $Task.AsTask().Wait()
-    $SessionManager = $Task.GetResults()
-    $CurrentSession = $SessionManager.GetCurrentSession()
-    if ($CurrentSession) {
-        $CurrentSession.TryPlayAsync() | Out-Null
-        Write-Output "PLAYING"
+    $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | 
+        Where-Object { 
+            $_.Name -eq 'AsTask' -and 
+            $_.GetParameters().Count -eq 1 -and 
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' 
+        })[0]
+
+    function Await-AsyncOperation {
+        param ($AsyncOp, $ResultType)
+        $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+        $netTask = $asTask.Invoke($null, @($AsyncOp))
+        $netTask.Wait(-1) | Out-Null
+        return $netTask.Result
+    }
+
+    $SessionManagerType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
+    $asyncOp = $SessionManagerType::RequestAsync()
+    $SessionManager = Await-AsyncOperation $asyncOp $SessionManagerType
+
+    if ($SessionManager) {
+        $CurrentSession = $SessionManager.GetCurrentSession()
+        if ($CurrentSession) {
+            $CurrentSession.TryPlayAsync() | Out-Null
+            Write-Output "PLAYING"
+        } else {
+            Write-Output "NO_SESSION"
+        }
     } else {
         Write-Output "NO_SESSION"
     }
@@ -125,10 +182,20 @@ def play_audio_windows(file_path):
     if res != 0:
         # Fallback sin especificar tipo (para algunos WAV)
         open_cmd = f'open "{short_path}" alias ad_alias'
-        ctypes.windll.winmm.mciSendStringW(open_cmd, None, 0, 0)
+        fallback_res = ctypes.windll.winmm.mciSendStringW(open_cmd, None, 0, 0)
+        if fallback_res != 0:
+            err_buf = ctypes.create_unicode_buffer(260)
+            ctypes.windll.winmm.mciGetErrorStringW(fallback_res, err_buf, 260)
+            print(f"\n[ERROR] No se pudo abrir el audio publicitario: {err_buf.value} (Código {fallback_res})")
+            return
 
     # El comando 'wait' detiene la ejecución del hilo hasta que el audio termine
-    ctypes.windll.winmm.mciSendStringW('play ad_alias wait', None, 0, 0)
+    play_res = ctypes.windll.winmm.mciSendStringW('play ad_alias wait', None, 0, 0)
+    if play_res != 0:
+        err_buf = ctypes.create_unicode_buffer(260)
+        ctypes.windll.winmm.mciGetErrorStringW(play_res, err_buf, 260)
+        print(f"\n[ERROR] Falló la reproducción del audio: {err_buf.value} (Código {play_res})")
+        
     ctypes.windll.winmm.mciSendStringW('close ad_alias', None, 0, 0)
 
 # =====================================================================
